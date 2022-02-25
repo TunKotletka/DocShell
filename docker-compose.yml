@@ -1,0 +1,146 @@
+version: "3"
+
+volumes:
+  postgres_13:
+  redis:
+  templates:
+  private_uploads:
+  public_uploads:
+  ds_log:
+  sidekiq_log:
+  core_log:
+
+services:
+  postgres:
+    image: registry.isoit.ru:5000/cicdd/img/postgres:13.3
+    container_name: docshell_postgres_13
+    restart: always
+    ports:
+      - "5432:5432"
+    volumes:
+      - "postgres_13:/var/lib/postgresql/data"
+      - "/mnt/ds4/share:/mnt/ds4/share"
+      - "/mnt/ds4/backups:/mnt/ds4/backups"
+    env_file:
+      - docshell.env
+
+  redis:
+    image: registry.isoit.ru:5000/cicdd/img/redis:6.0.9
+    container_name: docshell_redis
+    restart: always
+
+  centrifugo:
+    image: registry.isoit.ru:5000/cicdd/img/centrifugo:1.8.2
+    container_name: docshell_centrifugo
+    command: centrifugo -c config.json --web
+    restart: always
+    ports:
+      - "8082:8000"
+
+  migration_service:
+    image: registry.isoit.ru:5000/release/docshell4/migration_service:4.2.8
+    container_name: docshell_migration_service
+    expose:
+      - "80"
+    depends_on:
+      - postgres
+      - redis
+    env_file:
+      - docshell.env
+
+  ds:
+    image: registry.isoit.ru:5000/release/docshell4/docshell_api:4.2.8
+    container_name: docshell_ds
+    restart: always
+    expose:
+      - "80"
+    depends_on:
+      - postgres
+      - redis
+      - centrifugo
+    volumes:
+      - "private_uploads:/app/private/uploads"
+      - "public_uploads:/app/public/uploads"
+      - "ds_log:/app/log"
+    env_file:
+      - docshell.env
+
+  ds_sidekiq:
+    image: registry.isoit.ru:5000/release/docshell4/docshell_api:4.2.8
+    container_name: docshell_sidekiq
+    restart: always
+    depends_on:
+      - postgres
+      - redis
+      - centrifugo
+    command: bundle exec sidekiq
+    volumes:
+      - "private_uploads:/app/private/uploads"
+      - "public_uploads:/app/public/uploads"
+      - "sidekiq_log:/app/log"
+    env_file:
+      - docshell.env
+
+  core:
+    image: registry.isoit.ru:5000/release/docshell4/core:4.2.8
+    container_name: docshell_core
+    restart: always
+    env_file:
+      - docshell.env
+    expose:
+      - "80"
+    depends_on:
+      - postgres
+      - redis
+      - centrifugo
+    environment:
+      - POSTGRES_SCHEMA=auth
+    volumes:
+      - private_uploads:/app/private/uploads
+      - public_uploads:/app/public/uploads
+      - core_log:/app/log
+
+  fastreport:
+    image: registry.isoit.ru:5000/release/docshell4/export_report_mono:4.2.8
+    container_name: docshell_fastreport
+    restart: always
+    mem_limit: 4096m
+    expose:
+      - "8081"
+    depends_on:
+      - postgres
+    volumes:
+      - templates:/home/production/docshell_mono_templates:ro
+
+  fastreport_templates:
+    image: registry.isoit.ru:5000/release/docshell4/docshell_mono_templates:4.2.8
+    volumes:
+      - templates:/templates
+
+  converter:
+    container_name: docshell_converter
+    image: registry.isoit.ru:5000/release/docshell4/converter:latest
+    restart: always
+
+  proxy:
+    image: registry.isoit.ru:5000/release/docshell4/proxy:4.2.8
+    container_name: docshell_proxy
+    restart: always
+    depends_on:
+      - ds
+      - core
+    ports:
+      - "8081:80"
+
+  spa:
+    image: registry.isoit.ru:5000/release/docshell4/docshell_spa:4.2.8
+    container_name: docshell_spa
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - proxy
+    env_file:
+      - docshell.env
+    volumes:
+      - ./config.json:/usr/share/nginx/html/config.json
