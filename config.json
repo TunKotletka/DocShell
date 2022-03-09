@@ -1,6 +1,0 @@
-{
-  "BASE_URL": "http://host_ip:8081",
-  "WEBSOCKET_URL": "http://host_ip:8082/connection/websocket",
-  "USE_ANALYTICS": true,
-  "TYPE_AUTH": 0
-}
